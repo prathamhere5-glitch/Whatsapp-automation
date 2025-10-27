@@ -1,4 +1,4 @@
-// tgbot.js
+
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs-extra');
 const path = require('path');

@@ -6,7 +6,7 @@ const shortid = require('shortid');
 const schedule = require('node-schedule');
 
 // ---------------- CONFIG ----------------
-const TOKEN = process.env.BOT_TOKEN || 'YOUR_BOT_TOKEN_HERE';
+const TOKEN = process.env.BOT_TOKEN || '8111876690:AAETmnCuSI71NXKiCI2VpgtoQiTq5sVliDw';
 const DATA_FILE = path.resolve(__dirname, 'data.json');
 
 // ---------------- DATA STORE ----------------

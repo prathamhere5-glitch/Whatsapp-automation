@@ -1,7 +1,7 @@
 {
   "name": "telegram-auto-bot",
   "version": "1.0.0",
-  "main": "telegram-auto-bot.js",
+  "main": "tgbot.js",
   "scripts": {
     "start": "node telegram-auto-bot.js"
   },

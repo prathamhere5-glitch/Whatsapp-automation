@@ -1,11 +1,14 @@
 {
-  "name": "telegram-bot",
+  "name": "telegram-auto-bot",
   "version": "1.0.0",
-  "main": "bot.js",
+  "main": "telegram-auto-bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node telegram-auto-bot.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.61.0"
+    "node-telegram-bot-api": "^0.61.0",
+    "fs-extra": "^11.1.1",
+    "shortid": "^2.2.16",
+    "node-schedule": "^2.1.1"
   }
 }

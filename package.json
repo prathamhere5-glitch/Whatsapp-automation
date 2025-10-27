@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "tgbot.js",
   "scripts": {
-    "start": "node telegram-auto-bot.js"
+    "start": "node tgbot.js"
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.61.0",

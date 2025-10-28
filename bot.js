@@ -1,58 +1,81 @@
-const { makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@adiwajshing/baileys');
-const TelegramBot = require('node-telegram-bot-api');
-const qrcode = require('qrcode');
-const fs = require('fs');
+import express from 'express';
+import { Client, LocalAuth } from 'whatsapp-web.js';
+import { Telegraf } from 'telegraf';
+import QRCode from 'qrcode';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const TELEGRAM_TOKEN = '8111876690:AAH28e-37x48Q-NxrccgdOjkt9dfdwpqk0w';
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+// Constants
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const TELEGRAM_TOKEN = '8111876690:AAH28e-37x48Q-NxrccgdOjkt9dfdwpqk0w'; // 🔹 Replace this
+const PORT = process.env.PORT || 3000;
 
-// Store sessions per user
-const userSockets = new Map();
+const app = express();
+const bot = new Telegraf(TELEGRAM_TOKEN);
+let linkedAccounts = {}; // { telegramUserId: whatsappClient }
 
-async function connectToWhatsApp(chatId) {
-    const { state, saveCreds } = await useMultiFileAuthState(`./auth_${chatId}`);
-    const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: true
-    });
+// Chromium path for Render
+const CHROME_PATH = '/usr/bin/chromium' || '/usr/bin/chromium-browser';
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
-            const qrImagePath = `./qr_${chatId}.png`;
-            await qrcode.toFile(qrImagePath, qr);
-            await bot.sendPhoto(chatId, fs.createReadStream(qrImagePath), {
-                caption: 'Scan this QR code with WhatsApp to connect.'
-            });
-            fs.unlinkSync(qrImagePath);
-        }
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
-                connectToWhatsApp(chatId);
-            } else {
-                await bot.sendMessage(chatId, 'WhatsApp disconnected. Type /connect to reconnect.');
-            }
-        } else if (connection === 'open') {
-            await bot.sendMessage(chatId, 'WhatsApp connected successfully!');
-        }
-    });
-
-    sock.ev.on('creds.update', saveCreds);
-    userSockets.set(chatId, sock);
-}
-
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text;
-
-    if (text === '/start') {
-        await bot.sendMessage(chatId, 'Welcome! Type /connect to start WhatsApp connection via QR code.');
-    } else if (text === '/connect') {
-        await connectToWhatsApp(chatId);
-    } else if (/^\+\d{10,15}$/.test(text)) {
-        // For pairing code: Baileys supports linking via phone number
-        // Example: await sock.requestPairingCode(text); then handle event
-        await bot.sendMessage(chatId, 'Pairing via number not fully implemented in this example—check Baileys docs for details.');
-    }
+// ✅ Telegram Start Command
+bot.start((ctx) => {
+  ctx.reply('👋 Welcome! Use /link to connect your WhatsApp account.');
 });
+
+// ✅ Link WhatsApp
+bot.command('link', async (ctx) => {
+  const userId = ctx.from.id;
+
+  if (linkedAccounts[userId]) {
+    return ctx.reply('✅ WhatsApp already linked.');
+  }
+
+  ctx.reply('🔄 Connecting to WhatsApp...');
+
+  const client = new Client({
+    authStrategy: new LocalAuth({ clientId: `user_${userId}` }),
+    puppeteer: {
+      headless: true,
+      executablePath: CHROME_PATH,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--single-process'
+      ],
+    },
+  });
+
+  client.on('qr', async (qr) => {
+    const filePath = path.join(__dirname, `qr_${userId}.png`);
+    await QRCode.toFile(filePath, qr);
+    await ctx.replyWithPhoto({ source: filePath }, { caption: '📲 Scan this QR to connect your WhatsApp.' });
+    fs.unlinkSync(filePath);
+  });
+
+  client.on('ready', () => {
+    ctx.reply('✅ WhatsApp connected successfully!');
+    linkedAccounts[userId] = client;
+  });
+
+  client.on('message', (msg) => {
+    if (msg.body === '!ping') {
+      client.sendMessage(msg.from, 'pong 🏓');
+    }
+  });
+
+  await client.initialize();
+});
+
+// Express keep-alive server
+app.get('/', (req, res) => {
+  res.send('✅ WhatsApp-Telegram Bot Running');
+});
+
+// Start server + bot
+app.listen(PORT, () => console.log(`🌍 Server running on port ${PORT}`));
+bot.launch().then(() => console.log('🚀 Telegram bot launched successfully'));

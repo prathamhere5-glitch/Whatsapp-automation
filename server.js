@@ -1,62 +1,78 @@
-import TelegramBot from "node-telegram-bot-api";
-import pkg from "whatsapp-web.js";
-import qrcode from "qrcode";
+import express from "express";
+import { Telegraf } from "telegraf";
+import QRCode from "qrcode";
+import { Client, LocalAuth } from "whatsapp-web.js";
+import puppeteer from "puppeteer";
 
-const { Client, LocalAuth } = pkg;
+const app = express();
+const PORT = process.env.PORT || 10000;
 
-// 🔹 Replace with your Telegram bot token
-const TELEGRAM_BOT_TOKEN = "8111876690:AAH28e-37x48Q-NxrccgdOjkt9dfdwpqk0w";
+// Telegram bot setup
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN || "8111876690:AAH28e-37x48Q-NxrccgdOjkt9dfdwpqk0w");
+let telegramChatId = null;
 
-// Create Telegram bot
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
-
-// Store WhatsApp client
-let client;
-
-// Start command
-bot.onText(/\/start/, async (msg) => {
-  const chatId = msg.chat.id;
-
-  bot.sendMessage(
-    chatId,
-    "👋 Welcome! Send /link to connect your WhatsApp account."
-  );
-});
-
-// Link command
-bot.onText(/\/link/, async (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, "📲 Initializing WhatsApp... please wait.");
-
-  client = new Client({
-    authStrategy: new LocalAuth({ clientId: "user-session" }),
+// WhatsApp client setup
+const client = new Client({
+    authStrategy: new LocalAuth({ dataPath: "./sessions" }),
     puppeteer: {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-extensions",
-        "--single-process",
-        "--no-zygote",
-      ],
-    },
-  });
-
-  client.on("qr", async (qr) => {
-    const qrImage = await qrcode.toBuffer(qr);
-    await bot.sendPhoto(chatId, qrImage, {
-      caption: "📱 Scan this QR with your WhatsApp to link your account.",
-    });
-  });
-
-  client.on("ready", () => {
-    bot.sendMessage(chatId, "✅ WhatsApp client is ready!");
-  });
-
-  client.on("disconnected", (reason) => {
-    bot.sendMessage(chatId, `⚠️ WhatsApp disconnected: ${reason}`);
-  });
-
-  client.initialize();
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        headless: true,
+        executablePath: puppeteer.executablePath()
+    }
 });
+
+// Start Express server (Render requires this)
+app.get("/", (req, res) => res.send("✅ WhatsApp-Telegram Bridge is running!"));
+app.listen(PORT, () => console.log(`🌐 Server live on port ${PORT}`));
+
+// WhatsApp Events
+client.on("qr", async (qr) => {
+    console.log("📲 QR Code generated. Sending to Telegram...");
+    if (telegramChatId) {
+        const qrImage = await QRCode.toBuffer(qr);
+        await bot.telegram.sendPhoto(telegramChatId, { source: qrImage }, { caption: "📱 Scan this QR to link WhatsApp!" });
+    } else {
+        console.log("⚠️ Telegram chat not initialized. Send /start in your bot first.");
+    }
+});
+
+client.on("ready", () => {
+    console.log("✅ WhatsApp is ready!");
+    if (telegramChatId) bot.telegram.sendMessage(telegramChatId, "✅ WhatsApp connected successfully!");
+});
+
+client.on("message", async (msg) => {
+    console.log(`💬 [WhatsApp] ${msg.from}: ${msg.body}`);
+    if (telegramChatId) {
+        await bot.telegram.sendMessage(telegramChatId, `📩 *${msg.from}*: ${msg.body}`, { parse_mode: "Markdown" });
+    }
+});
+
+// Telegram commands
+bot.start((ctx) => {
+    telegramChatId = ctx.chat.id;
+    ctx.reply("👋 Welcome! Send /link to connect WhatsApp.");
+});
+
+bot.command("link", async (ctx) => {
+    telegramChatId = ctx.chat.id;
+    ctx.reply("🔗 Initializing WhatsApp connection... please wait 5–10 seconds for QR.");
+    client.initialize();
+});
+
+bot.on("text", async (ctx) => {
+    const text = ctx.message.text;
+    if (!client.info || !client.info.wid) {
+        return ctx.reply("⚠️ WhatsApp not connected. Use /link first.");
+    }
+    const chats = await client.getChats();
+    const chat = chats.find(c => c.isGroup === false);
+    if (chat) {
+        await chat.sendMessage(text);
+        ctx.reply(`✅ Sent to WhatsApp: ${text}`);
+    } else {
+        ctx.reply("❌ No private chat found on WhatsApp.");
+    }
+});
+
+bot.launch();

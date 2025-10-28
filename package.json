@@ -1,20 +1,16 @@
 {
   "name": "whatsapp-telegram-bot",
   "version": "1.0.0",
-  "description": "Telegram bot that links WhatsApp via whatsapp-web.js and sends QR for login",
-  "type": "module",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.61.0",
+    "express": "^4.19.2",
+    "puppeteer": "^22.6.3",
     "qrcode": "^1.5.3",
-    "whatsapp-web.js": "^1.26.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "author": "Pratham",
-  "license": "MIT"
+    "telegraf": "^4.15.3",
+    "whatsapp-web.js": "^1.25.0"
+  }
 }

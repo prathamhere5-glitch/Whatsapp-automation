@@ -1,73 +1,62 @@
-import express from "express";
-import { Telegraf } from "telegraf";
-import puppeteer from "puppeteer";
-import QRCode from "qrcode";
+import TelegramBot from "node-telegram-bot-api";
+import pkg from "whatsapp-web.js";
+import qrcode from "qrcode";
 
-const app = express();
-const port = process.env.PORT || 3000;
+const { Client, LocalAuth } = pkg;
 
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN || "8111876690:AAH28e-37x48Q-NxrccgdOjkt9dfdwpqk0w");
-let linkedAccounts = {};
+// 🔹 Replace with your Telegram bot token
+const TELEGRAM_BOT_TOKEN = "8111876690:AAH28e-37x48Q-NxrccgdOjkt9dfdwpqk0w";
 
-// Telegram start command
-bot.start((ctx) => {
-  ctx.reply(
-    "👋 Welcome!\n\nUse the buttons below to manage WhatsApp automation.",
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "➕ Add Account", callback_data: "add_account" },
-            { text: "📋 List Accounts", callback_data: "list_accounts" },
-          ],
-          [
-            { text: "▶️ Start Messaging", callback_data: "start_messaging" },
-            { text: "⏹ Stop Messaging", callback_data: "stop_messaging" },
-          ],
-        ],
-      },
-    }
+// Create Telegram bot
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+
+// Store WhatsApp client
+let client;
+
+// Start command
+bot.onText(/\/start/, async (msg) => {
+  const chatId = msg.chat.id;
+
+  bot.sendMessage(
+    chatId,
+    "👋 Welcome! Send /link to connect your WhatsApp account."
   );
 });
 
-// Handle button actions
-bot.on("callback_query", async (ctx) => {
-  const data = ctx.callbackQuery.data;
-  const chatId = ctx.chat.id;
+// Link command
+bot.onText(/\/link/, async (msg) => {
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, "📲 Initializing WhatsApp... please wait.");
 
-  switch (data) {
-    case "add_account":
-      ctx.reply("📲 Use the pairing code to link your WhatsApp account...");
-      // (Puppeteer logic here)
-      break;
+  client = new Client({
+    authStrategy: new LocalAuth({ clientId: "user-session" }),
+    puppeteer: {
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-extensions",
+        "--single-process",
+        "--no-zygote",
+      ],
+    },
+  });
 
-    case "list_accounts":
-      if (Object.keys(linkedAccounts).length === 0) {
-        ctx.reply("❌ No linked accounts yet.");
-      } else {
-        const list = Object.keys(linkedAccounts)
-          .map((id, i) => `${i + 1}. ${id}`)
-          .join("\n");
-        ctx.reply(`🔗 Linked Accounts:\n${list}`);
-      }
-      break;
+  client.on("qr", async (qr) => {
+    const qrImage = await qrcode.toBuffer(qr);
+    await bot.sendPhoto(chatId, qrImage, {
+      caption: "📱 Scan this QR with your WhatsApp to link your account.",
+    });
+  });
 
-    case "start_messaging":
-      ctx.reply("🚀 Messaging started!");
-      break;
+  client.on("ready", () => {
+    bot.sendMessage(chatId, "✅ WhatsApp client is ready!");
+  });
 
-    case "stop_messaging":
-      ctx.reply("🛑 Messaging stopped.");
-      break;
+  client.on("disconnected", (reason) => {
+    bot.sendMessage(chatId, `⚠️ WhatsApp disconnected: ${reason}`);
+  });
 
-    default:
-      ctx.reply("❓ Unknown option");
-      break;
-  }
-
-  await ctx.answerCbQuery();
+  client.initialize();
 });
-
-bot.launch();
-app.get("/", (req, res) => res.send("Bot is running on Render 🚀"));
-app.listen(port, () => console.log(`Server started on port ${port}`));

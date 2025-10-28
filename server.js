@@ -1,81 +1,46 @@
-import express from 'express';
-import { Client, LocalAuth } from 'whatsapp-web.js';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth } = pkg;
 import { Telegraf } from 'telegraf';
 import QRCode from 'qrcode';
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
-// Constants
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const TELEGRAM_TOKEN = '8111876690:AAH28e-37x48Q-NxrccgdOjkt9dfdwpqk0w'; // 🔹 Replace this
-const PORT = process.env.PORT || 3000;
+const TELEGRAM_BOT_TOKEN = '8111876690:AAH28e-37x48Q-NxrccgdOjkt9dfdwpqk0w';
+const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-const app = express();
-const bot = new Telegraf(TELEGRAM_TOKEN);
-let linkedAccounts = {}; // { telegramUserId: whatsappClient }
+const clients = new Map();
 
-// Chromium path for Render
-const CHROME_PATH = '/usr/bin/chromium' || '/usr/bin/chromium-browser';
-
-// ✅ Telegram Start Command
-bot.start((ctx) => {
-  ctx.reply('👋 Welcome! Use /link to connect your WhatsApp account.');
-});
-
-// ✅ Link WhatsApp
-bot.command('link', async (ctx) => {
+bot.command('connect', async (ctx) => {
   const userId = ctx.from.id;
-
-  if (linkedAccounts[userId]) {
-    return ctx.reply('✅ WhatsApp already linked.');
+  if (clients.has(userId)) {
+    return ctx.reply('⚠️ WhatsApp already linked.');
   }
 
-  ctx.reply('🔄 Connecting to WhatsApp...');
-
+  ctx.reply('📲 Initializing WhatsApp...');
   const client = new Client({
-    authStrategy: new LocalAuth({ clientId: `user_${userId}` }),
+    authStrategy: new LocalAuth({ clientId: String(userId) }),
     puppeteer: {
       headless: true,
-      executablePath: CHROME_PATH,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote',
-        '--single-process'
-      ],
-    },
-  });
-
-  client.on('qr', async (qr) => {
-    const filePath = path.join(__dirname, `qr_${userId}.png`);
-    await QRCode.toFile(filePath, qr);
-    await ctx.replyWithPhoto({ source: filePath }, { caption: '📲 Scan this QR to connect your WhatsApp.' });
-    fs.unlinkSync(filePath);
-  });
-
-  client.on('ready', () => {
-    ctx.reply('✅ WhatsApp connected successfully!');
-    linkedAccounts[userId] = client;
-  });
-
-  client.on('message', (msg) => {
-    if (msg.body === '!ping') {
-      client.sendMessage(msg.from, 'pong 🏓');
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     }
   });
 
-  await client.initialize();
+  client.on('qr', async (qr) => {
+    const file = `qr_${userId}.png`;
+    await QRCode.toFile(file, qr);
+    await ctx.replyWithPhoto({ source: file }, { caption: '📸 Scan this QR to link WhatsApp' });
+    fs.unlinkSync(file);
+  });
+
+  client.on('ready', () => {
+    ctx.reply('✅ WhatsApp Connected!');
+  });
+
+  client.on('message', msg => {
+    if (msg.body === '!ping') msg.reply('pong');
+  });
+
+  client.initialize();
+  clients.set(userId, client);
 });
 
-// Express keep-alive server
-app.get('/', (req, res) => {
-  res.send('✅ WhatsApp-Telegram Bot Running');
-});
-
-// Start server + bot
-app.listen(PORT, () => console.log(`🌍 Server running on port ${PORT}`));
-bot.launch().then(() => console.log('🚀 Telegram bot launched successfully'));
+bot.launch().then(() => console.log('🚀 Telegram bot ready on Render!'));

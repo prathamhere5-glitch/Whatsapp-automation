@@ -1,40 +1,94 @@
 import { Telegraf } from "telegraf";
+import express from "express";
 import { mainMenu } from "./ui.js";
-import { ensureUserFolder, createAccountFolder, listAccounts } from "./accountManager.js";
+import { createAccountFolder, listAccounts } from "./accountManager.js";
 import { createWAClient } from "./whatsappClient.js";
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
+const token = process.env.BOT_TOKEN;
+if (!token) {
+  console.error("BOT_TOKEN not set!");
+  process.exit(1);
+}
 
-let linkingState = {};  // temporary state machine
+const bot = new Telegraf(token);
+const app = express();
+app.use(express.json());
 
+let linkingState = {}; // temp state
+
+// ✅ Start command
 bot.start(async (ctx) => {
-  await ctx.reply("✅ Welcome to the Multi WhatsApp Linker Bot!", mainMenu);
+  linkingState[ctx.from.id] = null;
+  await ctx.reply("✅ Welcome to the WhatsApp Multi-Link Bot!", mainMenu);
 });
 
-bot.action("START", async (ctx) => {
-  await ctx.editMessageText("✅ Bot is running!", mainMenu);
-});
-
+// ✅ Add Account
 bot.action("ADD_ACCOUNT", async (ctx) => {
-  ctx.reply("📞 Send the phone number of the WhatsApp account you want to link:");
   linkingState[ctx.from.id] = "WAITING_FOR_NUMBER";
+  await ctx.reply("📞 Send the WhatsApp phone number (with country code)");
 });
 
+// ✅ User sent a number
 bot.on("text", async (ctx) => {
   const userId = ctx.from.id;
-  const text = ctx.message.text;
+  const state = linkingState[userId];
 
-  if (linkingState[userId] === "WAITING_FOR_NUMBER") {
-    const number = text.replace(/\D/g, "");
+  if (state === "WAITING_FOR_NUMBER") {
+    const number = ctx.message.text.replace(/\D/g, "");
+
     const sessionPath = createAccountFolder(userId, number);
 
-    ctx.reply(`🔗 Linking WhatsApp account: *${number}*\n\nGenerating pairing code...`, { parse_mode: "Markdown" });
+    await ctx.reply(`🔗 Linking WhatsApp Account: *${number}*\nPlease wait...`, { parse_mode: "Markdown" });
 
-    const client = createWAClient(sessionPath, number, async (code) => {
-      await ctx.reply(`🔑 *Your pairing code:*\n\n\`${code}\`\n\n✅ Enter it on WhatsApp!`, {
-        parse_mode: "Markdown"
-      });
+    const wa = createWAClient(sessionPath, number, {
+      sendQR: async (jpeg, caption) => {
+        await ctx.replyWithPhoto({ source: jpeg }, { caption });
+      },
+      sendPairCode: async (code) => {
+        await ctx.reply(`🔑 Pairing code:\n\`${code}\``, { parse_mode: "Markdown" });
+      }
     });
+
+    await wa.init();
+
+    linkingState[userId] = null;
+  }
+});
+
+// ✅ List accounts
+bot.action("LIST_ACCOUNTS", async (ctx) => {
+  const accounts = listAccounts(ctx.from.id);
+
+  if (accounts.length === 0) {
+    await ctx.reply("❌ No accounts linked yet.");
+    return;
+  }
+
+  let msg = "📄 *Your Linked Accounts:*\n\n";
+  accounts.forEach((a) => (msg += `✅ ${a}\n`));
+
+  await ctx.reply(msg, { parse_mode: "Markdown" });
+});
+
+// ✅ Webhook setup (RENDER)
+const domain = process.env.RENDER_EXTERNAL_URL;
+const port = process.env.PORT || 10000;
+const path = `/webhook/${bot.secretPathComponent()}`;
+
+app.use(path, bot.webhookCallback(path));
+
+if (domain) {
+  bot.telegram.setWebhook(`${domain}${path}`).then(() => {
+    app.listen(port, () => {
+      console.log(`✅ Bot running (webhook) → ${domain}${path}`);
+    });
+  });
+} else {
+  // local fallback
+  bot.launch().then(() => {
+    console.log("✅ Bot running (polling)");
+  });
+}    });
 
     client.initialize();
 

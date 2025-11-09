@@ -1,40 +1,74 @@
 import { Telegraf } from "telegraf";
-import express from "express";
-import { mainMenu } from "./ui.js";
-import { createAccountFolder, listAccounts } from "./accountManager.js";
-import { createWAClient } from "./whatsappClient.js";
+import fs from "fs-extra";
+import QRCode from "qrcode";
+import sharp from "sharp";
+import pkg from "whatsapp-web.js";
 
-const token = process.env.BOT_TOKEN;
+const { Client, LocalAuth } = pkg;
 
-if (!token) {
-  console.error("❌ BOT_TOKEN missing! Set it in Render environment variables.");
-  process.exit(1);
-}
+const bot = new Telegraf(process.env.BOT_TOKEN);
 
-const bot = new Telegraf(token);
-const app = express();
-app.use(express.json());
+// make sessions folder
+if (!fs.existsSync("sessions")) fs.mkdirSync("sessions");
 
-let linkingState = {}; // temporary state store
+let linkingState = {};
 
-// ✅ Start command
-bot.start(async (ctx) => {
+bot.start((ctx) => {
   linkingState[ctx.from.id] = null;
-  await ctx.reply("✅ Welcome to the WhatsApp Multi-Link Bot!", mainMenu);
+  ctx.reply("✅ Simple WhatsApp Link Bot\nSend /add to link account");
 });
 
-// ✅ Add Account button
-bot.action("ADD_ACCOUNT", async (ctx) => {
+bot.command("add", (ctx) => {
   linkingState[ctx.from.id] = "WAITING_FOR_NUMBER";
-  await ctx.reply("📞 Send the WhatsApp phone number (with COUNTRY CODE):");
+  ctx.reply("📞 Send phone number with country code");
 });
 
-// ✅ User sends a number
 bot.on("text", async (ctx) => {
-  const userId = ctx.from.id;
-  const state = linkingState[userId];
+  const state = linkingState[ctx.from.id];
+  const text = ctx.message.text;
 
-  if (state === "WAITING_FOR_NUMBER") {
+  if (state !== "WAITING_FOR_NUMBER") return;
+
+  const number = text.replace(/\D/g, "");
+  const sessionDir = `sessions/${number}`;
+
+  fs.ensureDirSync(sessionDir);
+
+  ctx.reply("⏳ Connecting…");
+
+  const client = new Client({
+    authStrategy: new LocalAuth({
+      dataPath: sessionDir
+    }),
+    puppeteer: {
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    }
+  });
+
+  client.on("qr", async (qr) => {
+    const png = await QRCode.toBuffer(qr, { type: "png", width: 500 });
+    const jpeg = await sharp(png).jpeg({ quality: 90 }).toBuffer();
+    await ctx.replyWithPhoto({ source: jpeg }, { caption: "📲 Scan to link WhatsApp" });
+  });
+
+  client.on("ready", () => {
+    ctx.reply("✅ WhatsApp Ready!");
+  });
+
+  client.initialize();
+
+  linkingState[ctx.from.id] = null;
+});
+
+// start polling (simple)
+bot.launch().then(() => {
+  console.log("✅ TG bot running (polling)");
+});
+
+// graceful stop
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));  if (state === "WAITING_FOR_NUMBER") {
     const number = ctx.message.text.replace(/\D/g, "");
 
     const sessionPath = createAccountFolder(userId, number);

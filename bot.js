@@ -3,7 +3,7 @@ import { mainMenu } from "./ui.js";
 import { ensureUserFolder, createAccountFolder, listAccounts } from "./accountManager.js";
 import { createWAClient } from "./whatsappClient.js";
 
-const bot = new Telegraf("8111876690:AAEYLNrL6U4MxdzLAodvdOfW2o4PhT_oEzE");
+const bot = new Telegraf(process.env.BOT_TOKEN);
 
 let linkingState = {};  // temporary state machine
 

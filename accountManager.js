@@ -1,21 +1,23 @@
 import fs from "fs-extra";
 import path from "path";
+import { ensureSessionsRoot, SESSIONS_ROOT } from "./paths.js";
 
 export const ensureUserFolder = (userId) => {
-  const dir = path.join("sessions", userId.toString());
+  ensureSessionsRoot();
+  const dir = path.join(SESSIONS_ROOT, userId.toString());
   fs.ensureDirSync(dir);
   return dir;
 };
 
 export const listAccounts = (userId) => {
   const userDir = ensureUserFolder(userId);
-  const accounts = fs.readdirSync(userDir).filter(f => fs.lstatSync(path.join(userDir, f)).isDirectory());
-  return accounts;
+  return fs.readdirSync(userDir)
+    .filter(f => fs.lstatSync(path.join(userDir, f)).isDirectory());
 };
 
 export const createAccountFolder = (userId, number) => {
-  const userDir = ensureUserFolder(userId);
-  const accDir = path.join(userDir, number);
+  const dir = ensureUserFolder(userId);
+  const accDir = path.join(dir, number);
   fs.ensureDirSync(accDir);
   return accDir;
 };

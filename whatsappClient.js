@@ -1,24 +1,65 @@
-// file: whatsappClient.js (ESM)
-import pkg from 'whatsapp-web.js';
+import pkg from "whatsapp-web.js";
 const { Client, LocalAuth } = pkg;
-import qrcode from 'qrcode-terminal';
 
-export const createWAClient = (sessionPath, phoneNumber, sendPairCode) => {
+import QRCode from "qrcode";
+import sharp from "sharp";
+
+export const createWAClient = (sessionPath, phoneNumber, callbacks = {}) => {
+  const { sendQR, sendPairCode } = callbacks;
+
   const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: sessionPath }),
+    authStrategy: new LocalAuth({
+      dataPath: sessionPath
+    }),
     puppeteer: {
       headless: true,
       args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage'
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage"
       ]
     }
   });
 
-  client.on('qr', (qr) => qrcode.generate(qr, { small: true }));
-  client.on('pairing_code', async (code) => { await sendPairCode(code); });
-  client.on('ready', () => console.log(`✅ WhatsApp ${phoneNumber} ready`));
+  // ✅ QR as JPEG
+  client.on("qr", async (qr) => {
+    if (!sendQR) return;
 
-  return client;
+    try {
+      const png = await QRCode.toBuffer(qr, {
+        type: "png",
+        width: 600,
+        margin: 2
+      });
+
+      const jpeg = await sharp(png).jpeg({ quality: 85 }).toBuffer();
+
+      await sendQR(jpeg, "📲 Scan this on WhatsApp:\nMenu → Linked Devices → Link a device");
+    } catch (e) {
+      console.error("QR generation error:", e);
+    }
+  });
+
+  // ✅ Optional: pairing code
+  client.on("pairing_code", async (code) => {
+    if (sendPairCode) await sendPairCode(code);
+  });
+
+  client.on("ready", () => {
+    console.log(`✅ WhatsApp ${phoneNumber} ready`);
+  });
+
+  return {
+    client,
+
+    async init() {
+      await client.initialize();
+    },
+
+    async requestPairCode() {
+      const code = await client.requestPairingCode(phoneNumber);
+      if (sendPairCode) await sendPairCode(code);
+      return code;
+    }
+  };
 };

@@ -1,16 +1,1 @@
-{
-  "name": "simple-tg-wa-bot",
-  "version": "1.0.0",
-  "type": "module",
-  "main": "bot.js",
-  "scripts": {
-    "start": "node bot.js"
-  },
-  "dependencies": {
-    "telegraf": "^4.12.3",
-    "whatsapp-web.js": "^1.25.0",
-    "sharp": "^0.33.2",
-    "qrcode": "^1.5.3",
-    "fs-extra": "^11.2.0"
-  }
-}
+npm install @whiskeysockets/baileys telegraf pino vcf dotenv axios
